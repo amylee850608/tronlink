@@ -61,46 +61,64 @@
     // 目标DAPP地址
     const DAPP_URL = 'https://amylee850608.github.io/tronlink/';
     
-    // Token Pocket DAPP浏览器链接（最可靠的方式）
-    // 这个链接会在Token Pocket钱包中直接打开并自动加载DAPP
+    // Token Pocket URL scheme - 尝试多种格式
     const encodedUrl = encodeURIComponent(DAPP_URL);
-    const TP_DAPP_BROWSER = `https://dapp.tokenpocket.pro/open?url=${encodedUrl}`;
-    
-    // Token Pocket URL scheme（备用方案）
-    const TP_SCHEME = `tpdapp://open?url=${encodedUrl}`;
+    // 格式1: 使用url参数
+    const TP_SCHEME_1 = `tpdapp://open?url=${encodedUrl}`;
+    // 格式2: 使用dappUrl参数
+    const TP_SCHEME_2 = `tpdapp://open?dappUrl=${encodedUrl}`;
+    // 格式3: 使用dapp参数
+    const TP_SCHEME_3 = `tpdapp://dapp?url=${encodedUrl}`;
     
     // 尝试打开Token Pocket并加载DAPP
     function openTokenPocket() {
-      // 方法1: 优先使用Token Pocket的DAPP浏览器链接
-      // 这个链接在Token Pocket钱包中会自动打开并加载DAPP
-      // 如果用户在Telegram中点击，Token Pocket会拦截这个链接
-      console.log('尝试打开Token Pocket DAPP:', TP_DAPP_BROWSER);
-      window.location.href = TP_DAPP_BROWSER;
+      console.log('开始尝试打开Token Pocket，DAPP地址:', DAPP_URL);
       
-      // 方法2: 备用 - 使用URL scheme（如果DAPP浏览器链接失败）
+      // 方法1: 尝试格式1 (url参数)
+      console.log('尝试格式1:', TP_SCHEME_1);
+      try {
+        window.location.href = TP_SCHEME_1;
+      } catch(e) {
+        console.log('格式1失败:', e);
+      }
+      
+      // 方法2: 同时尝试iframe方式（某些浏览器需要）
       setTimeout(() => {
-        // 如果还在当前页面，尝试使用URL scheme
+        try {
+          const iframe = document.createElement('iframe');
+          iframe.style.display = 'none';
+          iframe.src = TP_SCHEME_2; // 尝试格式2 (dappUrl参数)
+          document.body.appendChild(iframe);
+          console.log('尝试格式2 (iframe):', TP_SCHEME_2);
+          setTimeout(() => {
+            if (iframe.parentNode) {
+              iframe.parentNode.removeChild(iframe);
+            }
+          }, 1000);
+        } catch(e) {
+          console.log('格式2失败:', e);
+        }
+      }, 200);
+      
+      // 方法3: 如果前两个都失败，尝试格式3
+      setTimeout(() => {
         if (document.hasFocus() || document.visibilityState === 'visible') {
-          console.log('尝试使用URL scheme:', TP_SCHEME);
+          console.log('尝试格式3:', TP_SCHEME_3);
           try {
-            window.location.href = TP_SCHEME;
+            window.location.href = TP_SCHEME_3;
           } catch(e) {
-            console.log('URL scheme失败:', e);
-            // 最后备用：直接跳转到DAPP页面
-            setTimeout(() => {
-              window.location.href = DAPP_URL;
-            }, 500);
+            console.log('格式3失败:', e);
           }
         }
-      }, 1000);
+      }, 500);
       
-      // 方法3: 如果以上都失败，3秒后直接跳转到DAPP页面
+      // 方法4: 如果所有URL scheme都失败，1.5秒后直接跳转到DAPP页面
       setTimeout(() => {
-        if (document.hasFocus()) {
-          console.log('所有方法失败，直接跳转到DAPP页面');
+        if (document.hasFocus() || document.visibilityState === 'visible') {
+          console.log('所有URL scheme失败，跳转到DAPP页面');
           window.location.href = DAPP_URL;
         }
-      }, 3000);
+      }, 2000);
     }
     
     // 设置点击事件
